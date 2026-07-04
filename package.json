@@ -1,0 +1,25 @@
+{
+  "name": "codebase-visualizer",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm-run-all --parallel dev:server dev:web",
+    "dev:server": "npm run dev --workspace apps/server",
+    "dev:web": "npm run dev --workspace apps/web",
+    "build": "npm run build --workspace apps/web && npm run build --workspace apps/server",
+    "start": "npm run start --workspace apps/server",
+    "typecheck": "tsc -b packages/shared packages/analyzer apps/server && npm run typecheck --workspace apps/web",
+    "test": "npm run test --workspace packages/analyzer"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "npm-run-all": "^4.1.5",
+    "playwright-core": "^1.61.1",
+    "typescript": "^5.6.3"
+  }
+}

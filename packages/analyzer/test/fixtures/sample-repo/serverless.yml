@@ -1,0 +1,9 @@
+service: sample-repo
+provider:
+  name: aws
+  runtime: nodejs20.x
+functions:
+  resizeImage:
+    handler: lambdas/resize.handler
+    events:
+      - s3: uploads
