@@ -14,4 +14,20 @@ export const config = {
   anthropicApiKey: process.env.ANTHROPIC_API_KEY,
   /** Directory of built web assets to serve in production (optional). */
   staticDir: process.env.STATIC_DIR,
+  /**
+   * Hosted-deploy switch #2: require signup/login for all diagram and
+   * analysis APIs. Off locally so the app works with zero setup.
+   */
+  authRequired: process.env.AUTH_REQUIRED === 'true',
+  /** Set secure cookies (HTTPS-only). Enable behind TLS in production. */
+  secureCookies: process.env.SECURE_COOKIES === 'true',
+  /**
+   * Clerk keys switch the auth provider: when CLERK_SECRET_KEY is set the
+   * server verifies Clerk session JWTs and the web app shows Clerk's UI;
+   * without it the built-in email+password auth is used (local dev).
+   */
+  clerkSecretKey: process.env.CLERK_SECRET_KEY,
+  clerkPublishableKey: process.env.CLERK_PUBLISHABLE_KEY,
 };
+
+export const authProvider = (): 'clerk' | 'local' => (config.clerkSecretKey ? 'clerk' : 'local');

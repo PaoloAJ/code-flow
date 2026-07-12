@@ -1,0 +1,29 @@
+# Fly.io config — `fly launch --copy-config` then `fly deploy`
+app = "codebase-visualizer"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  AUTH_REQUIRED = "true"
+  ALLOW_LOCAL_PATHS = "false"
+  SECURE_COOKIES = "true"
+  # secrets: fly secrets set CLERK_SECRET_KEY=… CLERK_PUBLISHABLE_KEY=… ANTHROPIC_API_KEY=…
+
+[[mounts]]
+  source = "codeviz_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 4400
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    method = "GET"
+    path = "/api/health"

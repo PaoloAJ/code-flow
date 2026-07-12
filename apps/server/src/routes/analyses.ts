@@ -9,8 +9,11 @@ import type {
 } from '@codeviz/shared';
 import { jobManager } from '../jobs.js';
 import { config } from '../config.js';
+import { requireUser } from '../auth.js';
 
 export async function analysisRoutes(app: FastifyInstance) {
+  app.addHook('preHandler', requireUser);
+
   app.post<{ Body: CreateAnalysisRequest }>('/api/analyses', async (req, reply) => {
     const { source, skipEnrichment } = req.body ?? {};
     if (!source || (source.type !== 'local' && source.type !== 'github')) {

@@ -1,0 +1,25 @@
+services:
+  codeviz:
+    build: .
+    ports:
+      - '4400:4400'
+    volumes:
+      - codeviz-data:/data
+    environment:
+      # accounts are required on a shared deployment
+      AUTH_REQUIRED: 'true'
+      # only GitHub URLs may be analyzed (no server filesystem access)
+      ALLOW_LOCAL_PATHS: 'false'
+      # enable when serving over HTTPS (reverse proxy / ingress)
+      SECURE_COOKIES: 'false'
+      # Clerk authentication (recommended for deployments): set both keys from
+      # https://dashboard.clerk.com → API keys. Without them the app falls
+      # back to its built-in email+password accounts.
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
+      CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY:-}
+      # optional: unlocks Claude-powered component summaries + bottleneck flags
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    restart: unless-stopped
+
+volumes:
+  codeviz-data:

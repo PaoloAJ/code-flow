@@ -1,13 +1,14 @@
-import ELK from 'elkjs/lib/elk.bundled.js';
 import type { AnalysisGraph, XY } from '@codeviz/shared';
-
-const elk = new ELK();
 
 export const NODE_WIDTH = 250;
 export const NODE_HEIGHT = 118;
 
 /** Layered auto-layout for the generated graph. Returns component id → position. */
 export async function autoLayout(graph: AnalysisGraph): Promise<Record<string, XY>> {
+  // elkjs is ~1.4 MB minified and only needed once a graph exists — load it
+  // on demand so vite splits it out of the initial bundle.
+  const { default: ELK } = await import('elkjs/lib/elk.bundled.js');
+  const elk = new ELK();
   const elkGraph = {
     id: 'root',
     layoutOptions: {

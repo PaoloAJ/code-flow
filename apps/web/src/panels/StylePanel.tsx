@@ -70,13 +70,14 @@ export function StylePanel() {
           </div>
           <label>Fill style</label>
           <div className="seg">
-            {(['none', 'hachure', 'solid'] as const).map((fs) => (
+            {(['none', 'hachure', 'cross-hatch', 'solid'] as const).map((fs) => (
               <button
                 key={fs}
                 className={first.fillStyle === fs ? 'active' : ''}
                 onClick={() => apply({ fillStyle: fs }, 'fillStyle')}
+                title={fs}
               >
-                {fs}
+                {fs === 'none' ? '∅' : fs === 'hachure' ? '⧅' : fs === 'cross-hatch' ? '⊞' : '■'}
               </button>
             ))}
           </div>
@@ -106,6 +107,57 @@ export function StylePanel() {
               >
                 <svg width="20" height="10">
                   <line x1="1" y1="5" x2="19" y2="5" stroke="currentColor" strokeWidth={w} strokeLinecap="round" />
+                </svg>
+              </button>
+            ))}
+          </div>
+          <label>Stroke style</label>
+          <div className="seg">
+            {(['solid', 'dashed', 'dotted'] as const).map((ss) => (
+              <button
+                key={ss}
+                className={(first.strokeStyle ?? 'solid') === ss ? 'active' : ''}
+                onClick={() => apply({ strokeStyle: ss }, 'strokeStyle')}
+                title={ss}
+              >
+                <svg width="20" height="10">
+                  <line
+                    x1="1"
+                    y1="5"
+                    x2="19"
+                    y2="5"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeDasharray={ss === 'dashed' ? '5 4' : ss === 'dotted' ? '1.5 4' : undefined}
+                  />
+                </svg>
+              </button>
+            ))}
+          </div>
+          <label>Sloppiness</label>
+          <div className="seg">
+            {(['architect', 'artist', 'cartoonist'] as const).map((sl) => (
+              <button
+                key={sl}
+                className={(first.sloppiness ?? 'architect') === sl ? 'active' : ''}
+                onClick={() => apply({ sloppiness: sl }, 'sloppiness')}
+                title={sl}
+              >
+                <svg width="20" height="10">
+                  <path
+                    d={
+                      sl === 'architect'
+                        ? 'M1 5 L19 5'
+                        : sl === 'artist'
+                          ? 'M1 6 Q6 3 10 5.5 T19 4.5'
+                          : 'M1 7 Q4 1 8 6 T14 4 T19 7'
+                    }
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    fill="none"
+                    strokeLinecap="round"
+                  />
                 </svg>
               </button>
             ))}

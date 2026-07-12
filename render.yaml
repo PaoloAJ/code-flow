@@ -1,0 +1,24 @@
+# Render blueprint — deploy with "New + → Blueprint" at https://dashboard.render.com
+services:
+  - type: web
+    name: codebase-visualizer
+    runtime: docker
+    plan: starter # any paid plan; disks aren't available on free
+    healthCheckPath: /api/health
+    disk:
+      name: codeviz-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: AUTH_REQUIRED
+        value: 'true'
+      - key: ALLOW_LOCAL_PATHS
+        value: 'false'
+      - key: SECURE_COOKIES
+        value: 'true' # Render terminates TLS
+      - key: CLERK_SECRET_KEY
+        sync: false # set in the dashboard (secret)
+      - key: CLERK_PUBLISHABLE_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false # optional — Claude enrichment

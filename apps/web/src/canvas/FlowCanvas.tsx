@@ -1,10 +1,11 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Background,
   BackgroundVariant,
   MarkerType,
   ReactFlow,
   SelectionMode,
+  ViewportPortal,
   useReactFlow,
   useViewport,
   type Edge,
@@ -16,6 +17,7 @@ import {
 } from '@xyflow/react';
 import type { AnnotationNode, XY } from '@codeviz/shared';
 import { redo, undo, useStore, type Tool } from '../store';
+import { sendCursor } from '../collab';
 import { EDGE_KINDS, GRID, edgeStyle } from '../theme';
 import { NODE_HEIGHT, NODE_WIDTH } from '../layout';
 import { ComponentNode, InfraNode } from './ComponentNode';
@@ -60,7 +62,49 @@ export function FlowCanvas() {
   const theme = useStore((s) => s.theme);
   const toolLocked = useStore((s) => s.toolLocked);
 
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, fitView, zoomIn, zoomOut, zoomTo } = useReactFlow();
+
+  // Excalidraw keyboard parity that needs the React Flow context:
+  // ⌘A select-all annotations, ⌘+/⌘- zoom, ⌘0 reset to 100%.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') return;
+      // An annotation editor is open but focus may not have landed yet —
+      // never let shortcuts fire mid-edit.
+      if (document.querySelector('.react-flow__node textarea')) return;
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (e.key === '=' || e.key === '+') {
+        e.preventDefault();
+        zoomIn();
+      } else if (e.key === '-') {
+        e.preventDefault();
+        zoomOut();
+      } else if (e.key === '0') {
+        e.preventDefault();
+        zoomTo(1);
+      } else if (e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        const ids = useStore.getState().annotations.map((a) => a.id);
+        setSelectedNodes(new Set(ids));
+        useStore.getState().setSelectedAnnotations(ids);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [zoomIn, zoomOut, zoomTo]);
+
+  // Fit the viewport when a graph arrives (analyze/demo/load), once its layout
+  // positions exist. The declarative `fitView` prop can't be used: with an
+  // empty canvas React Flow defers it until the first node appears, so the
+  // viewport would jump onto the user's very first drawn shape.
+  const fittedGraph = useRef<typeof graph>(null);
+  useEffect(() => {
+    if (!graph || fittedGraph.current === graph) return;
+    if (Object.keys(positions).length === 0) return; // auto-layout still running
+    fittedGraph.current = graph;
+    requestAnimationFrame(() => fitView({ padding: 0.15 }));
+  }, [graph, positions, fitView]);
 
   // React Flow runs fully controlled here, so *we* must persist the selection
   // changes it emits — otherwise clicks never mark nodes selected and the
@@ -229,9 +273,41 @@ export function FlowCanvas() {
   );
 
   const dragToolActive = DRAG_TOOLS.includes(tool);
+  const collabActive = useStore((s) => s.collabActive);
+
+  // Right after a click selects a node, React Flow's pane transiently wins the
+  // hit test, so the second click of a fast double-click never reaches the
+  // node. Double-clicks bubble up here regardless — hit-test the editable
+  // annotations by their real DOM boxes and route the edit through the store.
+  const onWrapperDoubleClick = useCallback((e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('textarea, input')) return;
+    const els = document.querySelectorAll<HTMLElement>(
+      '.react-flow__node-sticky, .react-flow__node-label, .react-flow__node-shape',
+    );
+    for (const el of els) {
+      const r = el.getBoundingClientRect();
+      if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+        const id = el.getAttribute('data-id');
+        if (id) useStore.getState().setEditingAnnotation(id);
+        return;
+      }
+    }
+  }, []);
 
   return (
-    <>
+    <div
+      style={{ display: 'contents' }}
+      className={`tool-${tool}`}
+      onDoubleClick={onWrapperDoubleClick}
+      onPointerMove={
+        collabActive
+          ? (e) => {
+              const p = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+              sendCursor(p.x, p.y);
+            }
+          : undefined
+      }
+    >
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -248,6 +324,16 @@ export function FlowCanvas() {
             removeAnnotations([node.id]); // generated nodes aren't annotations — no-op
             return;
           }
+          // Excalidraw: the text tool clicked on existing text edits it, and
+          // clicked on a shape opens the shape's centered bound-text editor.
+          if (
+            (tool === 'label' || tool === 'sticky') &&
+            (node.type === 'label' || node.type === 'sticky' || node.type === 'shape')
+          ) {
+            useStore.getState().setEditingAnnotation(node.id);
+            if (!toolLocked) setTool('select');
+            return;
+          }
           if (node.type === 'component' || node.type === 'infra') {
             setSelection({ type: 'component', id: node.id });
           }
@@ -259,11 +345,11 @@ export function FlowCanvas() {
           }
           if (edge.type === 'kind') setSelection({ type: 'edge', id: edge.id });
         }}
-        fitView
         minZoom={0.05}
         maxZoom={10}
         snapToGrid
         snapGrid={[GRID.size, GRID.size]}
+        zoomOnDoubleClick={false}
         panOnDrag={tool === 'hand' ? true : [1, 2]}
         selectionOnDrag={tool === 'select'}
         selectionMode={SelectionMode.Partial}
@@ -285,13 +371,45 @@ export function FlowCanvas() {
           lineWidth={1}
           color={GRID.major[theme]}
         />
+        <PeerCursors />
       </ReactFlow>
       {dragToolActive && <SketchOverlay />}
       <StylePanel />
       <ZoomPanel />
       {graph && <EdgeLegend />}
       {!graph && annotations.length === 0 && <EmptyState />}
-    </>
+    </div>
+  );
+}
+
+/** Other people's cursors, rendered in flow coordinates during live sessions. */
+function PeerCursors() {
+  const peers = useStore((s) => s.peers);
+  const cursors = useStore((s) => s.cursors);
+  const { zoom } = useViewport();
+  if (peers.length === 0) return null;
+  return (
+    <ViewportPortal>
+      {peers.map((p) => {
+        const c = cursors[p.id];
+        if (!c) return null;
+        // Counter-scale so cursors keep their screen size at any zoom.
+        return (
+          <div
+            key={p.id}
+            className="peer-cursor"
+            style={{ transform: `translate(${c.x}px, ${c.y}px) scale(${1 / zoom})` }}
+          >
+            <svg width="18" height="18" viewBox="0 0 18 18">
+              <path d="M2 1 L16 8.5 L9.5 10 L6.5 16.5 Z" fill={p.color} stroke="#fff" strokeWidth="1" />
+            </svg>
+            <span className="peer-cursor-name" style={{ background: p.color }}>
+              {p.name}
+            </span>
+          </div>
+        );
+      })}
+    </ViewportPortal>
   );
 }
 
@@ -331,6 +449,8 @@ function SketchOverlay() {
       stroke: currentStyle.stroke,
       strokeWidth: currentStyle.strokeWidth,
       opacity: currentStyle.opacity,
+      strokeStyle: currentStyle.strokeStyle,
+      sloppiness: currentStyle.sloppiness,
       seed,
     };
     if (tool === 'arrow' || tool === 'line') {

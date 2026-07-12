@@ -170,6 +170,10 @@ export interface XY {
   y: number;
 }
 
+/** Excalidraw's sloppiness: architect = exact geometry (straight lines). */
+export type Sloppiness = 'architect' | 'artist' | 'cartoonist';
+export type StrokeStyle = 'solid' | 'dashed' | 'dotted';
+
 /** Style fields shared by drawn annotations (Excalidraw-style). */
 export interface DrawnStyle {
   stroke: string;
@@ -177,6 +181,10 @@ export interface DrawnStyle {
   opacity: number;
   /** roughjs seed so the sketchy rendering is stable across renders. */
   seed: number;
+  /** Default 'solid'. */
+  strokeStyle?: StrokeStyle;
+  /** Default 'architect' — perfectly straight lines. */
+  sloppiness?: Sloppiness;
 }
 
 export type AnnotationNode =
@@ -207,7 +215,9 @@ export type AnnotationNode =
       height: number;
       shape: 'rect' | 'ellipse' | 'diamond';
       fill: string;
-      fillStyle: 'none' | 'hachure' | 'solid';
+      fillStyle: 'none' | 'hachure' | 'cross-hatch' | 'solid';
+      /** Bound text rendered centered inside the shape (Excalidraw-style). */
+      text?: string;
     } & DrawnStyle)
   | ({
       id: string;
@@ -272,7 +282,79 @@ export interface SaveDiagramRequest {
   diagram: Omit<Diagram, 'updatedAt'>;
 }
 
+/** Dashboard card data for a saved diagram. */
+export interface DiagramListItem {
+  id: string;
+  name: string;
+  updatedAt: string;
+  /** Analyzed repo name, when the diagram has a generated graph. */
+  repo?: string;
+  components: number;
+  annotations: number;
+}
+
 export interface ServerConfigResponse {
   allowLocalPaths: boolean;
   enrichmentAvailable: boolean;
+  /** When true (hosted deployments) all diagram/analysis APIs need a session. */
+  authRequired: boolean;
+  /** 'clerk' when CLERK_SECRET_KEY is configured, else built-in email+password. */
+  authProvider: 'clerk' | 'local';
+  /** Present in clerk mode; the web app boots ClerkProvider with it. */
+  clerkPublishableKey?: string;
 }
+
+// ── Auth ─────────────────────────────────────────────────────────────────────
+
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+}
+
+export interface SignupRequest {
+  email: string;
+  password: string;
+  name: string;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface MeResponse {
+  user: User | null;
+  authRequired: boolean;
+}
+
+// ── Realtime collaboration protocol ─────────────────────────────────────────
+
+/** A granular mutation of the user-authored diagram layer. */
+export type CollabOp =
+  | { t: 'ann:add'; annotation: AnnotationNode }
+  | { t: 'ann:update'; id: string; patch: Record<string, unknown> }
+  | { t: 'ann:updateMany'; ids: string[]; patch: Record<string, unknown> }
+  | { t: 'ann:remove'; ids: string[] }
+  | { t: 'edge:add'; edge: AnnotationEdge }
+  | { t: 'edge:remove'; ids: string[] }
+  | { t: 'pos'; id: string; xy: XY };
+
+export interface PeerInfo {
+  id: string;
+  name: string;
+  color: string;
+}
+
+export type CollabClientMsg =
+  | { type: 'join'; diagramId: string }
+  | { type: 'op'; op: CollabOp }
+  | { type: 'cursor'; x: number; y: number };
+
+export type CollabServerMsg =
+  | { type: 'joined'; self: PeerInfo; peers: PeerInfo[]; diagram: Diagram | null }
+  | { type: 'peer-joined'; peer: PeerInfo }
+  | { type: 'peer-left'; id: string }
+  | { type: 'op'; from: string; op: CollabOp }
+  | { type: 'cursor'; from: string; x: number; y: number }
+  | { type: 'error'; message: string };

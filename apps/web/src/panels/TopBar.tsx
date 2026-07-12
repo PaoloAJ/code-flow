@@ -1,30 +1,35 @@
 import { useEffect, useState } from 'react';
-import { toPng } from 'html-to-image';
-import type { AnalysisProgressEvent, Diagram, RepoSource } from '@codeviz/shared';
+import type { AnalysisProgressEvent, RepoSource } from '@codeviz/shared';
 import { api } from '../api';
 import { useStore } from '../store';
 import { autoLayout } from '../layout';
 import { demoGraph } from '../mock';
+import { joinCollab, leaveCollab } from '../collab';
+import { AuthControls } from './AuthControls';
 
 export function TopBar() {
   const [repoInput, setRepoInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ text: string; error?: boolean } | null>(null);
   const [allowLocal, setAllowLocal] = useState(true);
-  const [showLoad, setShowLoad] = useState(false);
-  const [savedDiagrams, setSavedDiagrams] = useState<
-    Pick<Diagram, 'id' | 'name' | 'analysisId' | 'updatedAt'>[]
-  >([]);
 
   const graph = useStore((s) => s.graph);
   const diagramName = useStore((s) => s.diagramName);
   const setDiagramName = useStore((s) => s.setDiagramName);
   const theme = useStore((s) => s.theme);
   const toggleTheme = useStore((s) => s.toggleTheme);
+  const peers = useStore((s) => s.peers);
+  const collabActive = useStore((s) => s.collabActive);
 
   useEffect(() => {
     api.config().then((c) => setAllowLocal(c.allowLocalPaths)).catch(() => {});
   }, []);
+
+  const toDashboard = () => {
+    leaveCollab();
+    if (location.search) history.replaceState(null, '', location.pathname);
+    useStore.getState().setView('dashboard');
+  };
 
   const applyGraph = async (g: typeof demoGraph, analysisId: string | null) => {
     const positions = await autoLayout(g);
@@ -57,9 +62,9 @@ export function TopBar() {
     }
   };
 
-  const save = async () => {
+  const save = async (): Promise<string | null> => {
     const state = useStore.getState();
-    if (!state.graph) return;
+    if (!state.graph && state.annotations.length === 0) return null;
     const id = state.newDiagramId();
     try {
       await api.saveDiagram({
@@ -72,36 +77,37 @@ export function TopBar() {
         annotationEdges: state.annotationEdges,
       });
       setNote({ text: 'Diagram saved' });
+      return id;
     } catch (err) {
       setNote({ text: `Save failed: ${err instanceof Error ? err.message : err}`, error: true });
+      return null;
     }
   };
 
-  const openLoad = async () => {
-    try {
-      const { diagrams } = await api.listDiagrams();
-      setSavedDiagrams(diagrams);
-      setShowLoad(true);
-    } catch (err) {
-      setNote({ text: `Load failed: ${err instanceof Error ? err.message : err}`, error: true });
+  const share = async () => {
+    if (collabActive) {
+      leaveCollab();
+      history.replaceState(null, '', location.pathname);
+      setNote({ text: 'Left the live session' });
+      return;
     }
-  };
-
-  const loadDiagram = async (id: string) => {
+    const id = await save();
+    if (!id) return;
+    const url = `${location.origin}${location.pathname}?d=${id}`;
+    history.replaceState(null, '', url);
+    joinCollab(id);
     try {
-      const { diagram } = await api.getDiagram(id);
-      useStore.getState().loadDiagram(diagram);
-      useStore.temporal.getState().clear();
-      setShowLoad(false);
-      setNote({ text: `Loaded “${diagram.name}”` });
-    } catch (err) {
-      setNote({ text: `Load failed: ${err instanceof Error ? err.message : err}`, error: true });
+      await navigator.clipboard.writeText(url);
+      setNote({ text: 'Live link copied — anyone with it can draw with you' });
+    } catch {
+      setNote({ text: `Live at ${url}` });
     }
   };
 
   const exportPng = async () => {
     const el = document.querySelector<HTMLElement>('.react-flow__viewport');
     if (!el) return;
+    const { toPng } = await import('html-to-image'); // only loaded on export
     const dataUrl = await toPng(el, {
       backgroundColor: theme === 'dark' ? '#0d0d0d' : '#ffffff',
       pixelRatio: 2,
@@ -115,7 +121,9 @@ export function TopBar() {
   return (
     <header className="topbar">
       <div className="group grow">
-        <span className="brand">◇ Codebase Visualizer</span>
+        <button className="brand brand-btn" title="Back to your diagrams" onClick={toDashboard}>
+          ◇ Codebase Visualizer
+        </button>
         <input
           className="repo-input"
           type="text"
@@ -134,6 +142,16 @@ export function TopBar() {
         {note && <span className={`progress-note${note.error ? ' error' : ''}`}>{note.text}</span>}
       </div>
       <div className="group">
+        {peers.length > 0 && (
+          <span className="peer-avatars" title={peers.map((p) => p.name).join(', ')}>
+            {peers.slice(0, 4).map((p) => (
+              <span key={p.id} className="peer-avatar" style={{ background: p.color }}>
+                {p.name.slice(0, 1).toUpperCase()}
+              </span>
+            ))}
+            {peers.length > 4 && <span className="peer-avatar more">+{peers.length - 4}</span>}
+          </span>
+        )}
         <input
           type="text"
           value={diagramName}
@@ -144,8 +162,16 @@ export function TopBar() {
         <button className="ghost" onClick={save} disabled={!graph}>
           Save
         </button>
-        <button className="ghost" onClick={openLoad}>
-          Open
+        <button
+          className={collabActive ? 'primary' : 'ghost'}
+          onClick={share}
+          title={
+            collabActive
+              ? 'Live session running — click to leave'
+              : 'Save and copy a live link others can join'
+          }
+        >
+          {collabActive ? '● Live' : 'Share'}
         </button>
         <button className="ghost" onClick={exportPng} disabled={!graph}>
           Export PNG
@@ -157,22 +183,8 @@ export function TopBar() {
         >
           {theme === 'dark' ? '☀' : '🌙'}
         </button>
+        <AuthControls />
       </div>
-
-      {showLoad && (
-        <div className="modal-backdrop" onClick={() => setShowLoad(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2>Open diagram</h2>
-            {savedDiagrams.length === 0 && <div className="empty-hint">No saved diagrams yet.</div>}
-            {savedDiagrams.map((d) => (
-              <div key={d.id} className="diagram-row" onClick={() => loadDiagram(d.id)}>
-                <span>{d.name}</span>
-                <span className="when">{new Date(d.updatedAt).toLocaleString()}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </header>
   );
 }
