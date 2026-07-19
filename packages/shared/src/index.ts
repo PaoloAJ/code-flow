@@ -124,6 +124,8 @@ export interface AnalysisGraph {
   };
   components: ComponentNodeData[];
   edges: GraphEdge[];
+  /** Markdown repository map written by the agentic survey (needs ANTHROPIC_API_KEY). */
+  repoMap?: string;
 }
 
 // ── Analysis jobs ────────────────────────────────────────────────────────────

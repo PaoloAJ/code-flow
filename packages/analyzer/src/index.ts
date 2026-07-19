@@ -14,6 +14,7 @@ import { classifyRole } from './roles.js';
 import { cluster } from './cluster.js';
 import { applyStaticBottlenecks } from './bottlenecks.js';
 import { enrichGraph } from './enrich.js';
+import { surveyRepo } from './agent.js';
 
 export type { AnalyzeOptions } from './types.js';
 
@@ -142,14 +143,28 @@ export async function analyzeRepo(
   };
 
   if (opts.anthropicApiKey) {
-    progress({ phase: 'enriching', message: 'Summarizing components with Claude…', progress: 0 });
-    await enrichGraph(graph, factsByComponent, rootDir, opts.anthropicApiKey, (done, total) =>
-      progress({
-        phase: 'enriching',
-        message: `Summarized ${done}/${total} components`,
-        progress: done / total,
-      }),
-    );
+    progress({ phase: 'enriching', message: 'Mapping repository with Claude…', progress: 0 });
+    try {
+      await surveyRepo(graph, {
+        rootDir,
+        files: [...sources, ...configs],
+        apiKey: opts.anthropicApiKey,
+        onProgress: (message) => progress({ phase: 'enriching', message }),
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        'agentic survey failed, falling back to per-component enrichment:',
+        err instanceof Error ? err.message : err,
+      );
+      await enrichGraph(graph, factsByComponent, rootDir, opts.anthropicApiKey, (done, total) =>
+        progress({
+          phase: 'enriching',
+          message: `Summarized ${done}/${total} components`,
+          progress: done / total,
+        }),
+      );
+    }
   }
 
   return graph;
